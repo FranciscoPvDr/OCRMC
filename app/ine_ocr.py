@@ -133,8 +133,8 @@ def normalize_text(text: str) -> str:
 
 
 def extract_ine_data(raw_text: str) -> IneExtractionResponse:
-    curp = first_match(CURP_RE, raw_text)
-    clave_elector = first_match(CLAVE_ELECTOR_RE, raw_text)
+    curp = find_curp(raw_text)
+    clave_elector = find_clave_elector(raw_text)
     ocr = find_ocr(raw_text)
     cic = find_cic(raw_text, ocr)
     seccion = grouped_match(SECCION_RE, raw_text)
@@ -182,6 +182,35 @@ def grouped_match(pattern: re.Pattern[str], text: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def find_curp(text: str) -> str | None:
+    match = CURP_RE.search(text)
+    if match:
+        return match.group(0)
+    compact = re.sub(r"[^A-Z0-9]", "", text)
+    for candidate in re.findall(r"[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d", compact):
+        return candidate
+    labeled = re.search(r"CURP\.?\s*([A-Z0-9]{16,20})", text)
+    if labeled:
+        candidate = re.sub(r"[^A-Z0-9]", "", labeled.group(1))
+        if len(candidate) >= 18:
+            return candidate[:18]
+    return None
+
+
+def find_clave_elector(text: str) -> str | None:
+    match = CLAVE_ELECTOR_RE.search(text)
+    if match:
+        return match.group(0)
+    compact = re.sub(r"[^A-Z0-9]", "", text)
+    labeled = re.search(r"CLAVE(?:DE)?[A-Z]*ELECTOR([A-Z0-9]{16,22})", compact)
+    if labeled:
+        return labeled.group(1)[:18]
+    for candidate in re.findall(r"[A-Z]{6}[A-Z0-9]{12}", compact):
+        if any(char.isdigit() for char in candidate):
+            return candidate
+    return None
+
+
 def find_ocr(text: str) -> str | None:
     if "OCR" in text:
         match = re.search(r"OCR\s*[:\-]?\s*(\d{12,13})", text)
@@ -200,10 +229,14 @@ def find_cic(text: str, ocr: str | None) -> str | None:
 
 
 def extract_name(text: str) -> tuple[str | None, str | None, str | None]:
+    mrz_name = extract_name_from_mrz(text)
+    if any(mrz_name):
+        return mrz_name
     match = re.search(r"NOMBRE\s+([A-ZÑ ]{5,80}?)(?:\s+DOMICILIO|\s+CLAVE|\s+CURP|\s+FECHA|\s+SEXO)", text)
-    if not match:
-        return None, None, None
-    parts = [part for part in match.group(1).split() if len(part) > 1]
+    if match:
+        parts = [part for part in match.group(1).split() if len(part) > 1]
+    else:
+        parts = extract_name_words_near_sex(text)
     if len(parts) >= 3:
         return " ".join(parts[2:]), parts[0], parts[1]
     if len(parts) == 2:
@@ -211,6 +244,52 @@ def extract_name(text: str) -> tuple[str | None, str | None, str | None]:
     if len(parts) == 1:
         return parts[0], None, None
     return None, None, None
+
+
+def extract_name_from_mrz(text: str) -> tuple[str | None, str | None, str | None]:
+    matches = re.findall(r"\b([A-ZÑ]+(?:<[A-ZÑ]+)*)<<([A-ZÑ<]{3,})", text)
+    if not matches:
+        return None, None, None
+    surname_raw, names_raw = matches[-1]
+    surname_parts = [clean_name_token(part) for part in surname_raw.split("<") if clean_name_token(part)]
+    name_parts = [clean_name_token(part) for part in names_raw.split("<") if clean_name_token(part)]
+    if not surname_parts or not name_parts:
+        return None, None, None
+    primer_apellido = surname_parts[0]
+    segundo_apellido = " ".join(surname_parts[1:]) if len(surname_parts) > 1 else None
+    nombre = " ".join(split_joined_names(name_parts))
+    return nombre, primer_apellido, segundo_apellido
+
+
+def extract_name_words_near_sex(text: str) -> list[str]:
+    match = re.search(r"SEXO[HM]\s+([A-ZÑ ]{8,80}?)(?:\s+DOMICILIO|\s+CLAVE|\s+CURP)", text)
+    if not match:
+        return []
+    return [part for part in match.group(1).split() if len(part) > 1 and part not in {"DEL", "DE", "LA"}]
+
+
+def split_joined_names(parts: list[str]) -> list[str]:
+    names = []
+    known_names = ["FRANCISCO", "ISRAEL", "JOSE", "JUAN", "MARIA", "LUIS", "CARLOS", "MIGUEL", "ANGEL"]
+    for part in parts:
+        matched = False
+        for known_name in known_names:
+            if part.startswith(known_name) and part != known_name:
+                names.append(known_name)
+                rest = part[len(known_name):]
+                if rest:
+                    names.append(rest)
+                matched = True
+                break
+        if not matched:
+            names.append(part)
+    return names
+
+
+def clean_name_token(token: str) -> str:
+    token = re.sub(r"[^A-ZÑ]", "", token)
+    token = token.replace("SI", "")
+    return token
 
 
 def extract_address(text: str) -> str | None:
