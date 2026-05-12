@@ -16,6 +16,7 @@ CIC_RE = re.compile(r"\b\d{9}\b")
 SECCION_RE = re.compile(r"SECCI[O0]N\s*[:\-]?\s*(\d{3,5})")
 VIGENCIA_RE = re.compile(r"VIGENCIA\s*[:\-]?\s*(\d{4}\s*[-/ ]\s*\d{4}|\d{4})")
 INE_KEYWORDS = ["INSTITUTO NACIONAL ELECTORAL", "CREDENCIAL PARA VOTAR", "CLAVE DE ELECTOR", "CURP", "DOMICILIO", "VIGENCIA"]
+TESSERACT_TIMEOUT_SECONDS = 12
 
 
 def image_bytes_to_text(file_bytes: bytes, deep_ocr: bool = False) -> str:
@@ -57,7 +58,7 @@ def pil_image_to_text(image: Image.Image) -> str:
     best_text = ""
     best_score = -1
     for candidate in build_ocr_candidates(image, include_rotations=True):
-        text = normalize_text(pytesseract.image_to_string(candidate, lang="spa+eng", config="--oem 3 --psm 6"))
+        text = tesseract_to_text(candidate, config="--oem 3 --psm 6")
         score = score_ocr_text(text)
         if score > best_score:
             best_text = text
@@ -69,7 +70,7 @@ def pil_image_to_text(image: Image.Image) -> str:
 
 def fast_pil_image_to_text(image: Image.Image) -> str:
     image = ImageOps.exif_transpose(image).convert("RGB")
-    image.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
+    image.thumbnail((1800, 1800), Image.Resampling.LANCZOS)
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
     gray = resize_for_ocr(gray)
@@ -79,9 +80,25 @@ def fast_pil_image_to_text(image: Image.Image) -> str:
     candidates = []
     for candidate in (gray, threshold):
         for config in ("--oem 3 --psm 6", "--oem 3 --psm 11"):
-            text = normalize_text(pytesseract.image_to_string(candidate, lang="spa+eng", config=config))
+            text = tesseract_to_text(candidate, config=config)
             candidates.append((score_ocr_text(text), text))
+            if candidates[-1][0] >= 30:
+                return text
     return max(candidates, key=lambda item: item[0])[1]
+
+
+def tesseract_to_text(image: np.ndarray, config: str) -> str:
+    try:
+        return normalize_text(
+            pytesseract.image_to_string(
+                image,
+                lang="spa+eng",
+                config=config,
+                timeout=TESSERACT_TIMEOUT_SECONDS,
+            )
+        )
+    except RuntimeError:
+        return ""
 
 
 def build_ocr_candidates(image: Image.Image, include_rotations: bool) -> list[np.ndarray]:
@@ -109,7 +126,7 @@ def rotate_variants(image: np.ndarray) -> list[np.ndarray]:
 
 def resize_for_ocr(gray: np.ndarray) -> np.ndarray:
     height, width = gray.shape[:2]
-    target_width = 1600
+    target_width = 1200
     if width >= target_width:
         return gray
     scale = target_width / width

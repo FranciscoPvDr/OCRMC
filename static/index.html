@@ -521,7 +521,7 @@
         const apiKey = apiKeyInput.value.trim();
         const controller = new AbortController();
         activeController = controller;
-        activeTimeout = setTimeout(() => controller.abort(), 180000);
+        activeTimeout = setTimeout(() => controller.abort(), 60000);
         const body = new FormData();
         body.append('file', file);
         setProcessing(true);
@@ -545,7 +545,7 @@
           }
           resultBadge.textContent = 'Error';
           if (error.name === 'AbortError') {
-            result.textContent = 'La extracción fue cancelada o tardó más de 180 segundos. Puedes seleccionar otro archivo sin actualizar la página.';
+            result.textContent = 'La extracción fue cancelada o tardó más de 60 segundos. Puedes seleccionar otro archivo sin actualizar la página.';
           } else {
             result.textContent = `Error: ${error.message}`;
           }
