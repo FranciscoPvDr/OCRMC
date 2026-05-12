@@ -121,6 +121,44 @@ curl -X POST "https://tu-servicio.onrender.com/api/ine/extract" \
    - `MAX_PDF_PAGES`
 6. Despliega.
 
+## Despliegue en Railway con Git
+
+Railway suele funcionar mejor para esta API porque corre Docker y puede dar mejor respuesta para procesos OCR.
+
+1. Entra a Railway:
+   - `https://railway.app`
+2. Crea un nuevo proyecto:
+   - `New Project`
+   - `Deploy from GitHub repo`
+3. Selecciona el repositorio:
+   - `FranciscoPvDr/OCRMC`
+4. Railway detectará:
+   - `railway.json`
+   - `Dockerfile`
+5. Configura las variables de entorno:
+   - `CORS_ORIGINS=*`
+   - `MAX_UPLOAD_MB=8`
+   - `MAX_PDF_PAGES=1`
+   - `ADMIN_API_KEY=tu_llave_admin_secreta`
+   - `API_KEY=opcional_si_quieres_llave_fija`
+6. Espera el build/deploy.
+7. Genera un dominio público desde:
+   - `Settings`
+   - `Networking`
+   - `Generate Domain`
+
+La URL quedará parecida a:
+
+```text
+https://ocrmc-production.up.railway.app
+```
+
+Endpoint:
+
+```text
+https://ocrmc-production.up.railway.app/api/ine/extract
+```
+
 ## Ejemplo desde Cloudflare Worker
 
 ```js
