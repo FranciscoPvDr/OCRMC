@@ -33,7 +33,7 @@
           <form id="form">
             <div>
               <label for="file">Imagen de INE</label>
-              <input id="file" name="file" type="file" accept="image/*" required />
+              <input id="file" name="file" type="file" accept="image/*,.pdf,application/pdf" required />
             </div>
             <div>
               <label for="apiKey">API key opcional</label>
@@ -45,7 +45,7 @@
         <div class="card">
           <strong>Endpoint</strong>
           <p><code>POST /api/ine/extract</code></p>
-          <p>Body: <code>multipart/form-data</code> con campo <code>file</code>.</p>
+          <p>Body: <code>multipart/form-data</code> con campo <code>file</code>. Acepta imágenes y PDF.</p>
         </div>
       </section>
       <section>

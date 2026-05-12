@@ -7,7 +7,10 @@ class Settings(BaseSettings):
 
     cors_origins: str = "*"
     api_key: str | None = None
+    admin_api_key: str | None = None
+    api_keys_file: str = "data/api_keys.json"
     max_upload_mb: int = 8
+    max_pdf_pages: int = 2
 
     @property
     def cors_origin_list(self) -> list[str]:

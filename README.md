@@ -19,6 +19,7 @@ Formatos soportados:
 - WEBP
 - BMP
 - TIFF
+- PDF
 
 Respuesta principal:
 
@@ -63,8 +64,48 @@ http://localhost:8000
 ## Variables de entorno
 
 - `CORS_ORIGINS`: dominios permitidos separados por coma. Usa `*` para pruebas.
-- `API_KEY`: opcional. Si se configura, las solicitudes deben enviar header `x-api-key`.
+- `API_KEY`: opcional. Llave fija adicional para consumir la API.
+- `ADMIN_API_KEY`: llave maestra para crear/listar/revocar API keys.
+- `API_KEYS_FILE`: archivo donde se guardan hashes de API keys generadas. Por defecto `data/api_keys.json`.
 - `MAX_UPLOAD_MB`: tamaño máximo del archivo en MB.
+- `MAX_PDF_PAGES`: máximo de páginas PDF a procesar. Por defecto `2`.
+
+## Generar API keys
+
+Primero configura `ADMIN_API_KEY` en Render.
+
+Crear una API key:
+
+```bash
+curl -X POST "https://tu-servicio.onrender.com/api/admin/api-keys" \
+  -H "content-type: application/json" \
+  -H "x-admin-api-key: TU_ADMIN_API_KEY" \
+  -d "{\"name\":\"cloudflare-worker\"}"
+```
+
+La respuesta incluye `api_key` una sola vez. Guárdala en Cloudflare como secreto.
+
+Listar API keys:
+
+```bash
+curl "https://tu-servicio.onrender.com/api/admin/api-keys" \
+  -H "x-admin-api-key: TU_ADMIN_API_KEY"
+```
+
+Revocar una API key:
+
+```bash
+curl -X DELETE "https://tu-servicio.onrender.com/api/admin/api-keys/ID_DE_LA_KEY" \
+  -H "x-admin-api-key: TU_ADMIN_API_KEY"
+```
+
+Usar una API key generada:
+
+```bash
+curl -X POST "https://tu-servicio.onrender.com/api/ine/extract" \
+  -H "x-api-key: TU_API_KEY_GENERADA" \
+  -F "file=@ine.pdf"
+```
 
 ## Despliegue en Render con Git
 
@@ -74,8 +115,10 @@ http://localhost:8000
 4. Render detectará `render.yaml` y usará Docker.
 5. Configura variables de entorno si lo necesitas:
    - `API_KEY`
+   - `ADMIN_API_KEY`
    - `CORS_ORIGINS`
    - `MAX_UPLOAD_MB`
+   - `MAX_PDF_PAGES`
 6. Despliega.
 
 ## Ejemplo desde Cloudflare Worker

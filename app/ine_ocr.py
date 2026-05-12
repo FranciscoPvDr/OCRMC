@@ -4,6 +4,7 @@ from io import BytesIO
 import cv2
 import numpy as np
 import pytesseract
+import pypdfium2 as pdfium
 from PIL import Image, ImageOps
 
 from app.schemas import IneExtractedData, IneExtractionResponse
@@ -18,6 +19,22 @@ VIGENCIA_RE = re.compile(r"VIGENCIA\s*[:\-]?\s*(\d{4}\s*[-/ ]\s*\d{4}|\d{4})")
 
 def image_bytes_to_text(file_bytes: bytes) -> str:
     image = Image.open(BytesIO(file_bytes))
+    return pil_image_to_text(image)
+
+
+def pdf_bytes_to_text(file_bytes: bytes, max_pages: int) -> str:
+    document = pdfium.PdfDocument(file_bytes)
+    texts = []
+    for page_index in range(min(len(document), max_pages)):
+        page = document[page_index]
+        bitmap = page.render(scale=2.5)
+        image = bitmap.to_pil()
+        texts.append(pil_image_to_text(image))
+    document.close()
+    return normalize_text("\n".join(texts))
+
+
+def pil_image_to_text(image: Image.Image) -> str:
     image = ImageOps.exif_transpose(image).convert("RGB")
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)

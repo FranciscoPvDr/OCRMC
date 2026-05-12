@@ -10,3 +10,5 @@ services:
         value: "*"
       - key: MAX_UPLOAD_MB
         value: "8"
+      - key: MAX_PDF_PAGES
+        value: "2"
