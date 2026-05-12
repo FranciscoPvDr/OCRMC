@@ -97,7 +97,17 @@ async def extract_ine(
         else:
             raw_text = image_bytes_to_text(file_bytes, deep_ocr=deep_ocr, external_api_key=settings.ocr_space_api_key)
         result = extract_ine_data(raw_text)
-        if settings.groq_api_key and result.confidence < 0.75:
+        should_use_groq = (
+            settings.groq_api_key
+            and result.confidence < 0.75
+            and (
+                result.validation["has_ine_keywords"]
+                or result.validation["has_curp"]
+                or result.validation["has_clave_elector"]
+                or result.validation["has_ocr_or_cic"]
+            )
+        )
+        if should_use_groq:
             assisted_data = extract_ine_with_groq(raw_text, settings.groq_api_key, settings.groq_model)
             merged_data = merge_ine_data(result.extracted, assisted_data)
             result = extract_ine_data(raw_text)
