@@ -70,13 +70,12 @@ def pil_image_to_text(image: Image.Image) -> str:
 
 def fast_pil_image_to_text(image: Image.Image) -> str:
     image = ImageOps.exif_transpose(image).convert("RGB")
-    image.thumbnail((1800, 1800), Image.Resampling.LANCZOS)
+    image.thumbnail((2200, 2200), Image.Resampling.LANCZOS)
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
     gray = resize_for_ocr(gray)
-    gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
-    gray = sharpen_image(gray)
-    threshold = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    gray = enhance_gray_for_ocr(gray)
+    threshold = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 9)
     candidates = []
     for candidate in (gray, threshold):
         for config in ("--oem 3 --psm 6", "--oem 3 --psm 11"):
@@ -126,11 +125,19 @@ def rotate_variants(image: np.ndarray) -> list[np.ndarray]:
 
 def resize_for_ocr(gray: np.ndarray) -> np.ndarray:
     height, width = gray.shape[:2]
-    target_width = 1200
+    target_width = 1800
     if width >= target_width:
         return gray
     scale = target_width / width
     return cv2.resize(gray, (target_width, int(height * scale)), interpolation=cv2.INTER_CUBIC)
+
+
+def enhance_gray_for_ocr(gray: np.ndarray) -> np.ndarray:
+    gray = cv2.fastNlMeansDenoising(gray, None, 8, 7, 21)
+    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+    gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
+    return sharpen_image(gray)
 
 
 def sharpen_image(gray: np.ndarray) -> np.ndarray:
@@ -141,8 +148,8 @@ def sharpen_image(gray: np.ndarray) -> np.ndarray:
 def score_ocr_text(text: str) -> int:
     score = 0
     score += sum(20 for keyword in INE_KEYWORDS if keyword in text)
-    score += 30 if CURP_RE.search(text) else 0
-    score += 30 if CLAVE_ELECTOR_RE.search(text) else 0
+    score += 30 if find_curp(text) else 0
+    score += 30 if find_clave_elector(text) else 0
     score += 10 if OCR_RE.search(text) else 0
     score += min(len(re.findall(r"[A-ZÁÉÍÓÚÑ]{3,}", text)), 80)
     score -= len(re.findall(r"[^A-ZÁÉÍÓÚÑ0-9\s:.,/\-]", text))
@@ -231,12 +238,21 @@ def find_clave_elector(text: str) -> str | None:
         return match.group(0)
     compact = re.sub(r"[^A-Z0-9]", "", text)
     labeled = re.search(r"CLAVE(?:DE)?[A-Z]*ELECTOR([A-Z0-9]{16,22})", compact)
-    if labeled:
+    if labeled and is_plausible_clave_elector(labeled.group(1)[:18]):
         return labeled.group(1)[:18]
     for candidate in re.findall(r"[A-Z]{6}[A-Z0-9]{12}", compact):
-        if any(char.isdigit() for char in candidate):
+        if is_plausible_clave_elector(candidate):
             return candidate
     return None
+
+
+def is_plausible_clave_elector(candidate: str) -> bool:
+    if len(candidate) != 18:
+        return False
+    if not re.match(r"^[A-Z]{6}[A-Z0-9]{12}$", candidate):
+        return False
+    digit_count = sum(char.isdigit() for char in candidate)
+    return digit_count >= 6 and candidate[14] in {"H", "M"}
 
 
 def find_ocr(text: str) -> str | None:
