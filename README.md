@@ -68,7 +68,7 @@ http://localhost:8000
 - `ADMIN_API_KEY`: llave maestra para crear/listar/revocar API keys.
 - `API_KEYS_FILE`: archivo donde se guardan hashes de API keys generadas. Por defecto `data/api_keys.json`.
 - `MAX_UPLOAD_MB`: tamaño máximo del archivo en MB.
-- `MAX_PDF_PAGES`: máximo de páginas PDF a procesar. Por defecto `2`.
+- `MAX_PDF_PAGES`: máximo de páginas PDF a procesar. Por defecto `1`.
 
 ## Generar API keys
 

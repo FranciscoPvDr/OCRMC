@@ -28,7 +28,7 @@ def pdf_bytes_to_text(file_bytes: bytes, max_pages: int) -> str:
     texts = []
     for page_index in range(min(len(document), max_pages)):
         page = document[page_index]
-        bitmap = page.render(scale=4)
+        bitmap = page.render(scale=2.75)
         image = bitmap.to_pil()
         texts.append(pil_image_to_text(image))
     document.close()
@@ -39,35 +39,37 @@ def pil_image_to_text(image: Image.Image) -> str:
     image = ImageOps.exif_transpose(image).convert("RGB")
     best_text = ""
     best_score = -1
-    for candidate in build_ocr_candidates(image):
-        for config in ("--oem 3 --psm 6", "--oem 3 --psm 11", "--oem 3 --psm 12"):
+    for candidate in build_ocr_candidates(image, include_rotations=False):
+        for config in ("--oem 3 --psm 6", "--oem 3 --psm 11"):
             text = normalize_text(pytesseract.image_to_string(candidate, lang="spa+eng", config=config))
             score = score_ocr_text(text)
             if score > best_score:
                 best_text = text
                 best_score = score
+            if best_score >= 60:
+                return best_text
+    for candidate in build_ocr_candidates(image, include_rotations=True):
+        text = normalize_text(pytesseract.image_to_string(candidate, lang="spa+eng", config="--oem 3 --psm 6"))
+        score = score_ocr_text(text)
+        if score > best_score:
+            best_text = text
+            best_score = score
+        if best_score >= 60:
+            return best_text
     return best_text
 
 
-def build_ocr_candidates(image: Image.Image) -> list[np.ndarray]:
+def build_ocr_candidates(image: Image.Image, include_rotations: bool) -> list[np.ndarray]:
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     candidates = []
-    for rotated in rotate_variants(cv_image):
+    variants = rotate_variants(cv_image) if include_rotations else [cv_image]
+    for rotated in variants:
         gray = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY)
         gray = resize_for_ocr(gray)
         normalized = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
-        denoised = cv2.fastNlMeansDenoising(normalized, None, 20, 7, 21)
-        sharpened = sharpen_image(denoised)
+        sharpened = sharpen_image(normalized)
         threshold = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-        adaptive = cv2.adaptiveThreshold(
-            sharpened,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            31,
-            11,
-        )
-        candidates.extend([sharpened, threshold, adaptive])
+        candidates.extend([sharpened, threshold])
     return candidates
 
 
@@ -82,7 +84,7 @@ def rotate_variants(image: np.ndarray) -> list[np.ndarray]:
 
 def resize_for_ocr(gray: np.ndarray) -> np.ndarray:
     height, width = gray.shape[:2]
-    target_width = 2200
+    target_width = 1600
     if width >= target_width:
         return gray
     scale = target_width / width
