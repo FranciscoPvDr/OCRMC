@@ -538,7 +538,21 @@
             throw new Error(data.detail || `Error HTTP ${response.status}`);
           }
           resultBadge.textContent = data.ok ? `Verificado · ${Math.round(data.confidence * 100)}%` : `Revisar · ${Math.round(data.confidence * 100)}%`;
-          result.textContent = JSON.stringify(data, null, 2);
+          if (!data.ok && data.confidence === 0) {
+            result.textContent = [
+              'No se pudo leer texto confiable de la imagen.',
+              '',
+              'Recomendación:',
+              '- Usa una foto frontal y horizontal.',
+              '- Que la INE ocupe casi toda la imagen.',
+              '- Evita reflejos, sombras y compresión de WhatsApp.',
+              '- Si puedes, prueba con PDF o una foto de mayor resolución.',
+              '',
+              JSON.stringify(data, null, 2)
+            ].join('\n');
+          } else {
+            result.textContent = JSON.stringify(data, null, 2);
+          }
         } catch (error) {
           if (activeController !== controller && error.name === 'AbortError') {
             return;

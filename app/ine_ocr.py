@@ -76,8 +76,9 @@ def fast_pil_image_to_text(image: Image.Image) -> str:
     gray = resize_for_ocr(gray)
     gray = enhance_gray_for_ocr(gray)
     threshold = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 9)
+    inverted_threshold = cv2.bitwise_not(threshold)
     candidates = []
-    for candidate in (gray, threshold):
+    for candidate in (gray, threshold, inverted_threshold):
         for config in ("--oem 3 --psm 6", "--oem 3 --psm 11"):
             text = tesseract_to_text(candidate, config=config)
             candidates.append((score_ocr_text(text), text))
@@ -165,6 +166,13 @@ def normalize_text(text: str) -> str:
     return text.strip()
 
 
+def raw_text_noise_ratio(text: str) -> float:
+    if not text:
+        return 1
+    noisy_chars = re.findall(r"[^A-ZÁÉÍÓÚÑ0-9\s:.,/\-<]", text)
+    return len(noisy_chars) / max(len(text), 1)
+
+
 def extract_ine_data(raw_text: str) -> IneExtractionResponse:
     curp = find_curp(raw_text)
     clave_elector = find_clave_elector(raw_text)
@@ -181,6 +189,7 @@ def extract_ine_data(raw_text: str) -> IneExtractionResponse:
         "has_clave_elector": clave_elector is not None,
         "has_ocr_or_cic": bool(ocr or cic),
         "raw_text_length_ok": len(raw_text) >= 120,
+        "raw_text_noise_ratio_ok": raw_text_noise_ratio(raw_text) <= 0.22,
     }
     score_keys = ["has_ine_keywords", "has_curp", "has_clave_elector", "has_ocr_or_cic"]
     score = sum(bool(validation[key]) for key in score_keys) / len(score_keys)
@@ -359,4 +368,6 @@ def build_warnings(validation: dict[str, bool]) -> list[str]:
         warnings.append("No se detectó OCR o CIC.")
     if not validation.get("raw_text_length_ok", True):
         warnings.append("El OCR detectó poco texto; intenta con una imagen más cercana, enfocada, horizontal y sin reflejos.")
+    if not validation.get("raw_text_noise_ratio_ok", True):
+        warnings.append("El OCR detectó mucho ruido visual; intenta con una foto más nítida, sin compresión, tomada de frente y con la INE ocupando casi toda la imagen.")
     return warnings
