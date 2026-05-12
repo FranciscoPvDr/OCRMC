@@ -62,19 +62,30 @@
         event.preventDefault();
         const file = document.querySelector('#file').files[0];
         const apiKey = document.querySelector('#apiKey').value.trim();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 120000);
         const body = new FormData();
         body.append('file', file);
         button.disabled = true;
-        result.textContent = 'Procesando...';
+        result.textContent = `Procesando ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)...`;
         try {
           const headers = {};
           if (apiKey) headers['x-api-key'] = apiKey;
-          const response = await fetch('/api/ine/extract', { method: 'POST', headers, body });
-          const data = await response.json();
+          const response = await fetch('/api/ine/extract', { method: 'POST', headers, body, signal: controller.signal });
+          const contentType = response.headers.get('content-type') || '';
+          const data = contentType.includes('application/json') ? await response.json() : { detail: await response.text() };
+          if (!response.ok) {
+            throw new Error(data.detail || `Error HTTP ${response.status}`);
+          }
           result.textContent = JSON.stringify(data, null, 2);
         } catch (error) {
-          result.textContent = error.message;
+          if (error.name === 'AbortError') {
+            result.textContent = 'La extracción tardó más de 120 segundos. Intenta con una imagen/PDF más ligero o con menos páginas.';
+          } else {
+            result.textContent = `Error: ${error.message}`;
+          }
         } finally {
+          clearTimeout(timeout);
           button.disabled = false;
         }
       });

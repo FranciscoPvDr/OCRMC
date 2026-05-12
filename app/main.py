@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -10,6 +12,7 @@ from app.ine_ocr import extract_ine_data, image_bytes_to_text, pdf_bytes_to_text
 from app.schemas import IneExtractionResponse
 
 app = FastAPI(title="INE OCR API", version="1.0.0")
+logger = logging.getLogger("ine_ocr_api")
 
 settings = get_settings()
 app.add_middleware(
@@ -78,6 +81,7 @@ async def extract_ine(
         )
 
     file_bytes = await file.read()
+    logger.info("Procesando archivo INE: filename=%s content_type=%s size=%s", file.filename, file.content_type, len(file_bytes))
     max_bytes = settings.max_upload_mb * 1024 * 1024
     if len(file_bytes) > max_bytes:
         raise HTTPException(
@@ -92,6 +96,7 @@ async def extract_ine(
             raw_text = image_bytes_to_text(file_bytes)
         return extract_ine_data(raw_text)
     except Exception as exc:
+        logger.exception("Error procesando archivo INE")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"No fue posible procesar el archivo: {exc}",
