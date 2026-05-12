@@ -1,5 +1,6 @@
 import re
 from io import BytesIO
+import warnings
 
 import cv2
 import numpy as np
@@ -35,9 +36,9 @@ def pdf_bytes_to_text(file_bytes: bytes, max_pages: int) -> str:
     texts = []
     for page_index in range(min(len(document), max_pages)):
         page = document[page_index]
-        bitmap = page.render(scale=1.8)
+        bitmap = page.render(scale=2.8)
         image = bitmap.to_pil()
-        texts.append(fast_pil_image_to_text(image))
+        texts.append(pdf_page_image_to_text(image))
     document.close()
     return normalize_text("\n".join(texts))
 
@@ -46,7 +47,9 @@ def extract_pdf_embedded_text(document: pdfium.PdfDocument, max_pages: int) -> s
     texts = []
     for page_index in range(min(len(document), max_pages)):
         text_page = document[page_index].get_textpage()
-        texts.append(text_page.get_text_range())
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            texts.append(text_page.get_text_range())
     return normalize_text("\n".join(texts))
 
 
@@ -71,6 +74,16 @@ def pil_image_to_text(image: Image.Image) -> str:
 def fast_pil_image_to_text(image: Image.Image) -> str:
     image = ImageOps.exif_transpose(image).convert("RGB")
     image.thumbnail((2200, 2200), Image.Resampling.LANCZOS)
+    return prepared_pil_image_to_text(image)
+
+
+def pdf_page_image_to_text(image: Image.Image) -> str:
+    image = ImageOps.exif_transpose(image).convert("RGB")
+    image.thumbnail((3200, 3200), Image.Resampling.LANCZOS)
+    return prepared_pil_image_to_text(image)
+
+
+def prepared_pil_image_to_text(image: Image.Image) -> str:
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
     gray = resize_for_ocr(gray)
