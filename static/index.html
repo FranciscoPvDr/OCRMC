@@ -259,6 +259,26 @@
       button:hover { transform: translateY(-1px); }
       button:disabled { opacity: .6; cursor: wait; transform: none; }
 
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .secondary-button {
+        border: 1px solid var(--mc-line);
+        background: rgba(255, 250, 242, .72);
+        color: var(--mc-coffee);
+        box-shadow: none;
+      }
+
+      .danger-button {
+        border: 1px solid rgba(159, 47, 36, .28);
+        background: rgba(159, 47, 36, .08);
+        color: var(--mc-danger);
+        box-shadow: none;
+      }
+
       .hint {
         margin: 0;
         color: var(--mc-muted);
@@ -383,6 +403,10 @@
               <input id="apiKey" name="apiKey" type="password" placeholder="Opcional si la API está protegida" />
             </div>
             <button id="button" type="submit">Extraer datos</button>
+            <div class="actions">
+              <button class="danger-button" id="cancelButton" type="button" disabled>Cancelar</button>
+              <button class="secondary-button" id="clearButton" type="button">Limpiar</button>
+            </div>
             <p class="hint">Para mejores resultados, usa una imagen frontal, clara, horizontal, sin reflejos y con buena iluminación.</p>
           </form>
         </aside>
@@ -405,18 +429,74 @@
     <script>
       const form = document.querySelector('#form');
       const button = document.querySelector('#button');
+      const cancelButton = document.querySelector('#cancelButton');
+      const clearButton = document.querySelector('#clearButton');
+      const fileInput = document.querySelector('#file');
+      const apiKeyInput = document.querySelector('#apiKey');
       const result = document.querySelector('#result');
       const resultBadge = document.querySelector('#resultBadge');
+      let activeController = null;
+      let activeTimeout = null;
+
+      function abortActiveRequest() {
+        if (activeController) {
+          activeController.abort();
+          activeController = null;
+        }
+        if (activeTimeout) {
+          clearTimeout(activeTimeout);
+          activeTimeout = null;
+        }
+      }
+
+      function setProcessing(isProcessing) {
+        button.disabled = isProcessing;
+        cancelButton.disabled = !isProcessing;
+        fileInput.disabled = isProcessing;
+      }
+
+      function resetResult() {
+        abortActiveRequest();
+        setProcessing(false);
+        fileInput.value = '';
+        resultBadge.textContent = 'Esperando archivo';
+        result.textContent = 'Selecciona un archivo para iniciar la extracción.';
+      }
+
+      fileInput.addEventListener('change', () => {
+        abortActiveRequest();
+        setProcessing(false);
+        if (fileInput.files[0]) {
+          resultBadge.textContent = 'Archivo listo';
+          result.textContent = `Archivo seleccionado: ${fileInput.files[0].name}`;
+        }
+      });
+
+      cancelButton.addEventListener('click', () => {
+        abortActiveRequest();
+        setProcessing(false);
+        resultBadge.textContent = 'Cancelado';
+        result.textContent = 'Extracción cancelada. Puedes seleccionar otro archivo o volver a intentar.';
+      });
+
+      clearButton.addEventListener('click', resetResult);
 
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const file = document.querySelector('#file').files[0];
-        const apiKey = document.querySelector('#apiKey').value.trim();
+        abortActiveRequest();
+        const file = fileInput.files[0];
+        if (!file) {
+          resultBadge.textContent = 'Sin archivo';
+          result.textContent = 'Selecciona una imagen o PDF antes de extraer datos.';
+          return;
+        }
+        const apiKey = apiKeyInput.value.trim();
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 180000);
+        activeController = controller;
+        activeTimeout = setTimeout(() => controller.abort(), 180000);
         const body = new FormData();
         body.append('file', file);
-        button.disabled = true;
+        setProcessing(true);
         resultBadge.textContent = 'Procesando';
         result.textContent = `Procesando ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)...`;
         try {
@@ -431,15 +511,24 @@
           resultBadge.textContent = data.ok ? `Verificado · ${Math.round(data.confidence * 100)}%` : `Revisar · ${Math.round(data.confidence * 100)}%`;
           result.textContent = JSON.stringify(data, null, 2);
         } catch (error) {
+          if (activeController !== controller && error.name === 'AbortError') {
+            return;
+          }
           resultBadge.textContent = 'Error';
           if (error.name === 'AbortError') {
-            result.textContent = 'La extracción tardó más de 180 segundos. Intenta con una imagen/PDF más ligero o con menos páginas.';
+            result.textContent = 'La extracción fue cancelada o tardó más de 180 segundos. Puedes seleccionar otro archivo sin actualizar la página.';
           } else {
             result.textContent = `Error: ${error.message}`;
           }
         } finally {
-          clearTimeout(timeout);
-          button.disabled = false;
+          if (activeController === controller) {
+            activeController = null;
+            setProcessing(false);
+          }
+          if (activeTimeout) {
+            clearTimeout(activeTimeout);
+            activeTimeout = null;
+          }
         }
       });
     </script>
