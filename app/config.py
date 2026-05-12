@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     max_upload_mb: int = 8
     max_pdf_pages: int = 1
     ocr_space_api_key: str | None = None
+    groq_api_key: str | None = None
+    groq_model: str = "llama-3.1-8b-instant"
 
     @property
     def cors_origin_list(self) -> list[str]:

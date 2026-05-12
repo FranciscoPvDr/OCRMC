@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.api_keys import create_api_key, is_valid_api_key, list_api_keys, revoke_api_key
 from app.config import Settings, get_settings
+from app.groq_ine import extract_ine_with_groq, merge_ine_data
 from app.ine_ocr import extract_ine_data, image_bytes_to_text, pdf_bytes_to_text
 from app.schemas import IneExtractionResponse
 
@@ -95,7 +96,22 @@ async def extract_ine(
             raw_text = pdf_bytes_to_text(file_bytes, settings.max_pdf_pages, external_api_key=settings.ocr_space_api_key)
         else:
             raw_text = image_bytes_to_text(file_bytes, deep_ocr=deep_ocr, external_api_key=settings.ocr_space_api_key)
-        return extract_ine_data(raw_text)
+        result = extract_ine_data(raw_text)
+        if settings.groq_api_key and result.confidence < 0.75:
+            assisted_data = extract_ine_with_groq(raw_text, settings.groq_api_key, settings.groq_model)
+            merged_data = merge_ine_data(result.extracted, assisted_data)
+            result = extract_ine_data(raw_text)
+            result.extracted = merged_data
+            result.validation["groq_assisted"] = assisted_data is not None
+            if assisted_data is not None:
+                result.validation["has_curp"] = result.extracted.curp is not None
+                result.validation["has_clave_elector"] = result.extracted.clave_elector is not None
+                result.validation["has_ocr_or_cic"] = bool(result.extracted.ocr or result.extracted.cic)
+                score_keys = ["has_ine_keywords", "has_curp", "has_clave_elector", "has_ocr_or_cic"]
+                result.confidence = round(sum(bool(result.validation[key]) for key in score_keys) / len(score_keys), 2)
+                result.ok = result.confidence >= 0.5
+                result.warnings.append("Extracción complementada con Groq a partir del texto OCR disponible.")
+        return result
     except Exception as exc:
         logger.exception("Error procesando archivo INE")
         raise HTTPException(
