@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ine-ocr-api
+    env: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: MAX_UPLOAD_MB
+        value: "8"
