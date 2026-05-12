@@ -15,6 +15,7 @@ OCR_RE = re.compile(r"\b\d{12,13}\b")
 CIC_RE = re.compile(r"\b\d{9}\b")
 SECCION_RE = re.compile(r"SECCI[O0]N\s*[:\-]?\s*(\d{3,5})")
 VIGENCIA_RE = re.compile(r"VIGENCIA\s*[:\-]?\s*(\d{4}\s*[-/ ]\s*\d{4}|\d{4})")
+INE_KEYWORDS = ["INSTITUTO NACIONAL ELECTORAL", "CREDENCIAL PARA VOTAR", "CLAVE DE ELECTOR", "CURP", "DOMICILIO", "VIGENCIA"]
 
 
 def image_bytes_to_text(file_bytes: bytes) -> str:
@@ -27,7 +28,7 @@ def pdf_bytes_to_text(file_bytes: bytes, max_pages: int) -> str:
     texts = []
     for page_index in range(min(len(document), max_pages)):
         page = document[page_index]
-        bitmap = page.render(scale=2.5)
+        bitmap = page.render(scale=4)
         image = bitmap.to_pil()
         texts.append(pil_image_to_text(image))
     document.close()
@@ -36,14 +37,72 @@ def pdf_bytes_to_text(file_bytes: bytes, max_pages: int) -> str:
 
 def pil_image_to_text(image: Image.Image) -> str:
     image = ImageOps.exif_transpose(image).convert("RGB")
+    best_text = ""
+    best_score = -1
+    for candidate in build_ocr_candidates(image):
+        for config in ("--oem 3 --psm 6", "--oem 3 --psm 11", "--oem 3 --psm 12"):
+            text = normalize_text(pytesseract.image_to_string(candidate, lang="spa+eng", config=config))
+            score = score_ocr_text(text)
+            if score > best_score:
+                best_text = text
+                best_score = score
+    return best_text
+
+
+def build_ocr_candidates(image: Image.Image) -> list[np.ndarray]:
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.bilateralFilter(gray, 9, 75, 75)
-    gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
-    threshold = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-    config = "--oem 3 --psm 6"
-    text = pytesseract.image_to_string(threshold, lang="spa", config=config)
-    return normalize_text(text)
+    candidates = []
+    for rotated in rotate_variants(cv_image):
+        gray = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY)
+        gray = resize_for_ocr(gray)
+        normalized = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
+        denoised = cv2.fastNlMeansDenoising(normalized, None, 20, 7, 21)
+        sharpened = sharpen_image(denoised)
+        threshold = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        adaptive = cv2.adaptiveThreshold(
+            sharpened,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            11,
+        )
+        candidates.extend([sharpened, threshold, adaptive])
+    return candidates
+
+
+def rotate_variants(image: np.ndarray) -> list[np.ndarray]:
+    return [
+        image,
+        cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE),
+        cv2.rotate(image, cv2.ROTATE_180),
+        cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE),
+    ]
+
+
+def resize_for_ocr(gray: np.ndarray) -> np.ndarray:
+    height, width = gray.shape[:2]
+    target_width = 2200
+    if width >= target_width:
+        return gray
+    scale = target_width / width
+    return cv2.resize(gray, (target_width, int(height * scale)), interpolation=cv2.INTER_CUBIC)
+
+
+def sharpen_image(gray: np.ndarray) -> np.ndarray:
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    return cv2.filter2D(gray, -1, kernel)
+
+
+def score_ocr_text(text: str) -> int:
+    score = 0
+    score += sum(20 for keyword in INE_KEYWORDS if keyword in text)
+    score += 30 if CURP_RE.search(text) else 0
+    score += 30 if CLAVE_ELECTOR_RE.search(text) else 0
+    score += 10 if OCR_RE.search(text) else 0
+    score += min(len(re.findall(r"[A-ZÁÉÍÓÚÑ]{3,}", text)), 80)
+    score -= len(re.findall(r"[^A-ZÁÉÍÓÚÑ0-9\s:.,/\-]", text))
+    return score
 
 
 def normalize_text(text: str) -> str:
@@ -144,8 +203,7 @@ def extract_address(text: str) -> str | None:
 
 
 def has_ine_keywords(text: str) -> bool:
-    keywords = ["INSTITUTO NACIONAL ELECTORAL", "CREDENCIAL PARA VOTAR", "CLAVE DE ELECTOR", "CURP"]
-    return any(keyword in text for keyword in keywords)
+    return any(keyword in text for keyword in INE_KEYWORDS)
 
 
 def build_warnings(validation: dict[str, bool]) -> list[str]:
