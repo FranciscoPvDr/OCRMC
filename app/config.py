@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     api_keys_file: str = "data/api_keys.json"
     max_upload_mb: int = 8
     max_pdf_pages: int = 1
+    ocr_space_api_key: str | None = None
 
     @property
     def cors_origin_list(self) -> list[str]:

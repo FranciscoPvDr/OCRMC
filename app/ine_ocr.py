@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import pytesseract
 import pypdfium2 as pdfium
+import requests
 from PIL import Image, ImageOps
 
 from app.schemas import IneExtractedData, IneExtractionResponse
@@ -18,16 +19,19 @@ SECCION_RE = re.compile(r"SECCI[O0]N\s*[:\-]?\s*(\d{3,5})")
 VIGENCIA_RE = re.compile(r"VIGENCIA\s*[:\-]?\s*(\d{4}\s*[-/ ]\s*\d{4}|\d{4})")
 INE_KEYWORDS = ["INSTITUTO NACIONAL ELECTORAL", "CREDENCIAL PARA VOTAR", "CLAVE DE ELECTOR", "CURP", "DOMICILIO", "VIGENCIA"]
 TESSERACT_TIMEOUT_SECONDS = 12
+OCR_SPACE_URL = "https://api.ocr.space/parse/image"
 
 
-def image_bytes_to_text(file_bytes: bytes, deep_ocr: bool = False) -> str:
+def image_bytes_to_text(file_bytes: bytes, deep_ocr: bool = False, external_api_key: str | None = None) -> str:
     image = Image.open(BytesIO(file_bytes))
     if deep_ocr:
-        return pil_image_to_text(image)
-    return fast_pil_image_to_text(image)
+        text = pil_image_to_text(image)
+    else:
+        text = fast_pil_image_to_text(image)
+    return fallback_external_ocr(file_bytes, text, external_api_key)
 
 
-def pdf_bytes_to_text(file_bytes: bytes, max_pages: int) -> str:
+def pdf_bytes_to_text(file_bytes: bytes, max_pages: int, external_api_key: str | None = None) -> str:
     document = pdfium.PdfDocument(file_bytes)
     embedded_text = extract_pdf_embedded_text(document, max_pages)
     if score_ocr_text(embedded_text) >= 30:
@@ -40,7 +44,39 @@ def pdf_bytes_to_text(file_bytes: bytes, max_pages: int) -> str:
         image = bitmap.to_pil()
         texts.append(pdf_page_image_to_text(image))
     document.close()
-    return normalize_text("\n".join(texts))
+    text = normalize_text("\n".join(texts))
+    return fallback_external_ocr(file_bytes, text, external_api_key)
+
+
+def fallback_external_ocr(file_bytes: bytes, current_text: str, external_api_key: str | None) -> str:
+    if score_ocr_text(current_text) >= 30 or not external_api_key:
+        return current_text
+    external_text = ocr_space_to_text(file_bytes, external_api_key)
+    if score_ocr_text(external_text) > score_ocr_text(current_text):
+        return external_text
+    return current_text
+
+
+def ocr_space_to_text(file_bytes: bytes, api_key: str) -> str:
+    try:
+        response = requests.post(
+            OCR_SPACE_URL,
+            data={
+                "apikey": api_key,
+                "language": "spa",
+                "OCREngine": "2",
+                "scale": "true",
+                "isTable": "false",
+            },
+            files={"file": ("document", file_bytes)},
+            timeout=45,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        parsed_results = payload.get("ParsedResults") or []
+        return normalize_text("\n".join(result.get("ParsedText", "") for result in parsed_results))
+    except Exception:
+        return ""
 
 
 def extract_pdf_embedded_text(document: pdfium.PdfDocument, max_pages: int) -> str:

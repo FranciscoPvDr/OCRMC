@@ -92,9 +92,9 @@ async def extract_ine(
 
     try:
         if file.content_type == "application/pdf":
-            raw_text = pdf_bytes_to_text(file_bytes, settings.max_pdf_pages)
+            raw_text = pdf_bytes_to_text(file_bytes, settings.max_pdf_pages, external_api_key=settings.ocr_space_api_key)
         else:
-            raw_text = image_bytes_to_text(file_bytes, deep_ocr=deep_ocr)
+            raw_text = image_bytes_to_text(file_bytes, deep_ocr=deep_ocr, external_api_key=settings.ocr_space_api_key)
         return extract_ine_data(raw_text)
     except Exception as exc:
         logger.exception("Error procesando archivo INE")
