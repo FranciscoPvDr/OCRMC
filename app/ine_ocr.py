@@ -69,13 +69,19 @@ def pil_image_to_text(image: Image.Image) -> str:
 
 def fast_pil_image_to_text(image: Image.Image) -> str:
     image = ImageOps.exif_transpose(image).convert("RGB")
-    image.thumbnail((1800, 1800), Image.Resampling.LANCZOS)
+    image.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
     gray = resize_for_ocr(gray)
     gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
     gray = sharpen_image(gray)
-    return normalize_text(pytesseract.image_to_string(gray, lang="spa+eng", config="--oem 3 --psm 6"))
+    threshold = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    candidates = []
+    for candidate in (gray, threshold):
+        for config in ("--oem 3 --psm 6", "--oem 3 --psm 11"):
+            text = normalize_text(pytesseract.image_to_string(candidate, lang="spa+eng", config=config))
+            candidates.append((score_ocr_text(text), text))
+    return max(candidates, key=lambda item: item[0])[1]
 
 
 def build_ocr_candidates(image: Image.Image, include_rotations: bool) -> list[np.ndarray]:
@@ -150,8 +156,10 @@ def extract_ine_data(raw_text: str) -> IneExtractionResponse:
         "has_curp": curp is not None,
         "has_clave_elector": clave_elector is not None,
         "has_ocr_or_cic": bool(ocr or cic),
+        "raw_text_length_ok": len(raw_text) >= 120,
     }
-    score = sum(validation.values()) / len(validation)
+    score_keys = ["has_ine_keywords", "has_curp", "has_clave_elector", "has_ocr_or_cic"]
+    score = sum(bool(validation[key]) for key in score_keys) / len(score_keys)
     warnings = build_warnings(validation)
 
     return IneExtractionResponse(
@@ -316,4 +324,6 @@ def build_warnings(validation: dict[str, bool]) -> list[str]:
         warnings.append("No se detectó clave de elector con formato válido.")
     if not validation["has_ocr_or_cic"]:
         warnings.append("No se detectó OCR o CIC.")
+    if not validation.get("raw_text_length_ok", True):
+        warnings.append("El OCR detectó poco texto; intenta con una imagen más cercana, enfocada, horizontal y sin reflejos.")
     return warnings
