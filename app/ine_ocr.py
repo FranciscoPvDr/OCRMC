@@ -25,29 +25,35 @@ def image_bytes_to_text(file_bytes: bytes) -> str:
 
 def pdf_bytes_to_text(file_bytes: bytes, max_pages: int) -> str:
     document = pdfium.PdfDocument(file_bytes)
+    embedded_text = extract_pdf_embedded_text(document, max_pages)
+    if score_ocr_text(embedded_text) >= 30:
+        document.close()
+        return embedded_text
     texts = []
     for page_index in range(min(len(document), max_pages)):
         page = document[page_index]
-        bitmap = page.render(scale=2.75)
+        bitmap = page.render(scale=1.8)
         image = bitmap.to_pil()
-        texts.append(pil_image_to_text(image))
+        texts.append(fast_pil_image_to_text(image))
     document.close()
+    return normalize_text("\n".join(texts))
+
+
+def extract_pdf_embedded_text(document: pdfium.PdfDocument, max_pages: int) -> str:
+    texts = []
+    for page_index in range(min(len(document), max_pages)):
+        text_page = document[page_index].get_textpage()
+        texts.append(text_page.get_text_range())
     return normalize_text("\n".join(texts))
 
 
 def pil_image_to_text(image: Image.Image) -> str:
     image = ImageOps.exif_transpose(image).convert("RGB")
+    fast_text = fast_pil_image_to_text(image)
+    if score_ocr_text(fast_text) >= 30:
+        return fast_text
     best_text = ""
     best_score = -1
-    for candidate in build_ocr_candidates(image, include_rotations=False):
-        for config in ("--oem 3 --psm 6", "--oem 3 --psm 11"):
-            text = normalize_text(pytesseract.image_to_string(candidate, lang="spa+eng", config=config))
-            score = score_ocr_text(text)
-            if score > best_score:
-                best_text = text
-                best_score = score
-            if best_score >= 60:
-                return best_text
     for candidate in build_ocr_candidates(image, include_rotations=True):
         text = normalize_text(pytesseract.image_to_string(candidate, lang="spa+eng", config="--oem 3 --psm 6"))
         score = score_ocr_text(text)
@@ -57,6 +63,16 @@ def pil_image_to_text(image: Image.Image) -> str:
         if best_score >= 60:
             return best_text
     return best_text
+
+
+def fast_pil_image_to_text(image: Image.Image) -> str:
+    image = ImageOps.exif_transpose(image).convert("RGB")
+    cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+    gray = resize_for_ocr(gray)
+    gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
+    gray = sharpen_image(gray)
+    return normalize_text(pytesseract.image_to_string(gray, lang="spa+eng", config="--oem 3 --psm 6"))
 
 
 def build_ocr_candidates(image: Image.Image, include_rotations: bool) -> list[np.ndarray]:
@@ -69,7 +85,7 @@ def build_ocr_candidates(image: Image.Image, include_rotations: bool) -> list[np
         normalized = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
         sharpened = sharpen_image(normalized)
         threshold = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-        candidates.extend([sharpened, threshold])
+        candidates.append(threshold)
     return candidates
 
 

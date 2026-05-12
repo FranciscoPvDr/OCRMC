@@ -413,7 +413,7 @@
         const file = document.querySelector('#file').files[0];
         const apiKey = document.querySelector('#apiKey').value.trim();
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 120000);
+        const timeout = setTimeout(() => controller.abort(), 180000);
         const body = new FormData();
         body.append('file', file);
         button.disabled = true;
@@ -433,7 +433,7 @@
         } catch (error) {
           resultBadge.textContent = 'Error';
           if (error.name === 'AbortError') {
-            result.textContent = 'La extracción tardó más de 120 segundos. Intenta con una imagen/PDF más ligero o con menos páginas.';
+            result.textContent = 'La extracción tardó más de 180 segundos. Intenta con una imagen/PDF más ligero o con menos páginas.';
           } else {
             result.textContent = `Error: ${error.message}`;
           }
