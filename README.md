@@ -141,7 +141,6 @@ Railway suele funcionar mejor para esta API porque corre Docker y puede dar mejo
    - `MAX_PDF_PAGES=1`
    - `ADMIN_API_KEY=tu_llave_admin_secreta`
    - `API_KEY=opcional_si_quieres_llave_fija`
-   - `OCR_SPACE_API_KEY=opcional_para_mejorar_pdf_o_imagen_dificil`
    - `GROQ_API_KEY=opcional_para_limpiar_y_estructurar_texto_ocr`
    - `GROQ_MODEL=llama-3.1-8b-instant`
 6. Espera el build/deploy.

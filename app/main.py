@@ -93,9 +93,9 @@ async def extract_ine(
 
     try:
         if file.content_type == "application/pdf":
-            raw_text = pdf_bytes_to_text(file_bytes, settings.max_pdf_pages, external_api_key=settings.ocr_space_api_key)
+            raw_text = pdf_bytes_to_text(file_bytes, settings.max_pdf_pages)
         else:
-            raw_text = image_bytes_to_text(file_bytes, deep_ocr=deep_ocr, external_api_key=settings.ocr_space_api_key)
+            raw_text = image_bytes_to_text(file_bytes, deep_ocr=deep_ocr)
         result = extract_ine_data(raw_text)
         should_use_groq = (
             settings.groq_api_key

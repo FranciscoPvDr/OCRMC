@@ -267,6 +267,35 @@
         line-height: 1.45;
       }
 
+      .preview-box {
+        display: none;
+        border: 1px solid var(--mc-line);
+        border-radius: 16px;
+        padding: 12px;
+        background: rgba(255, 250, 242, .55);
+      }
+
+      .preview-box img {
+        display: block;
+        width: 100%;
+        max-height: 220px;
+        object-fit: contain;
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .quality-list {
+        margin: 10px 0 0;
+        padding-left: 18px;
+        color: var(--mc-muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .quality-list.warning {
+        color: var(--mc-danger);
+      }
+
       button {
         border: 0;
         border-radius: 18px;
@@ -421,6 +450,10 @@
               <label for="file">Archivo</label>
               <input id="file" name="file" type="file" accept="image/*,.pdf,application/pdf" required />
             </div>
+            <div class="preview-box" id="previewBox">
+              <img id="previewImage" alt="Vista previa del archivo" />
+              <ul class="quality-list" id="qualityList"></ul>
+            </div>
             <div>
               <label for="apiKey">API key</label>
               <input id="apiKey" name="apiKey" type="password" placeholder="Opcional si la API está protegida" />
@@ -461,10 +494,14 @@
       const fileInput = document.querySelector('#file');
       const apiKeyInput = document.querySelector('#apiKey');
       const deepOcrInput = document.querySelector('#deepOcr');
+      const previewBox = document.querySelector('#previewBox');
+      const previewImage = document.querySelector('#previewImage');
+      const qualityList = document.querySelector('#qualityList');
       const result = document.querySelector('#result');
       const resultBadge = document.querySelector('#resultBadge');
       let activeController = null;
       let activeTimeout = null;
+      let qualityWarnings = [];
 
       function abortActiveRequest() {
         if (activeController) {
@@ -487,14 +524,72 @@
         abortActiveRequest();
         setProcessing(false);
         fileInput.value = '';
+        clearPreview();
         resultBadge.textContent = 'Esperando archivo';
         result.textContent = 'Selecciona un archivo para iniciar la extracción.';
+      }
+
+      function clearPreview() {
+        qualityWarnings = [];
+        previewImage.removeAttribute('src');
+        previewBox.style.display = 'none';
+        qualityList.innerHTML = '';
+        qualityList.classList.remove('warning');
+      }
+
+      function renderQuality(messages, isWarning) {
+        previewBox.style.display = 'block';
+        qualityList.classList.toggle('warning', isWarning);
+        qualityList.innerHTML = messages.map((message) => `<li>${message}</li>`).join('');
+      }
+
+      function inspectImageQuality(file) {
+        const objectUrl = URL.createObjectURL(file);
+        previewImage.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          const width = previewImage.naturalWidth;
+          const height = previewImage.naturalHeight;
+          qualityWarnings = [];
+          if (Math.max(width, height) < 1000) {
+            qualityWarnings.push(`Resolución baja (${width}x${height}). Recomendado: mínimo 1000px de ancho o alto.`);
+          }
+          if (Math.min(width, height) < 500) {
+            qualityWarnings.push('La INE puede venir muy pequeña para OCR.');
+          }
+          if (file.size < 180 * 1024) {
+            qualityWarnings.push('Archivo muy comprimido. Evita imágenes reenviadas por WhatsApp.');
+          }
+          const okMessages = [`Imagen detectada: ${width}x${height}px.`, 'Procura que la INE ocupe casi toda la foto.'];
+          renderQuality(qualityWarnings.length ? qualityWarnings : okMessages, qualityWarnings.length > 0);
+        };
+        previewImage.src = objectUrl;
+      }
+
+      function inspectFileQuality(file) {
+        clearPreview();
+        if (file.type.startsWith('image/')) {
+          inspectImageQuality(file);
+          return;
+        }
+        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+          const messages = [
+            'PDF detectado. Si es escaneado, debe venir de una imagen nítida.',
+            'Si falla, intenta subir una foto directa del frente de la INE con buena luz.'
+          ];
+          if (file.size < 180 * 1024) {
+            qualityWarnings = ['PDF muy ligero: puede contener una imagen muy comprimida o poco legible.'];
+            renderQuality(qualityWarnings, true);
+          } else {
+            renderQuality(messages, false);
+          }
+        }
       }
 
       fileInput.addEventListener('change', () => {
         abortActiveRequest();
         setProcessing(false);
         if (fileInput.files[0]) {
+          inspectFileQuality(fileInput.files[0]);
           resultBadge.textContent = 'Archivo listo';
           result.textContent = `Archivo seleccionado: ${fileInput.files[0].name}`;
         }
@@ -517,6 +612,21 @@
           resultBadge.textContent = 'Sin archivo';
           result.textContent = 'Selecciona una imagen o PDF antes de extraer datos.';
           return;
+        }
+        if (qualityWarnings.length) {
+          resultBadge.textContent = 'Revisar calidad';
+          result.textContent = [
+            'El archivo puede fallar en OCR por calidad baja:',
+            '',
+            ...qualityWarnings.map((warning) => `- ${warning}`),
+            '',
+            'Puedes continuar, pero si sale mal intenta una foto directa, horizontal, sin reflejos y con la INE ocupando casi toda la imagen.',
+            ''
+          ].join('\n');
+          const shouldContinue = window.confirm('El archivo parece tener baja calidad para OCR. ¿Quieres procesarlo de todos modos?');
+          if (!shouldContinue) {
+            return;
+          }
         }
         const apiKey = apiKeyInput.value.trim();
         const controller = new AbortController();
