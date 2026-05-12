@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -70,6 +70,7 @@ def health() -> dict[str, str]:
 @app.post("/api/ine/extract", response_model=IneExtractionResponse)
 async def extract_ine(
     file: UploadFile = File(...),
+    deep_ocr: bool = Query(default=False),
     _: None = Depends(require_api_key),
     settings: Settings = Depends(get_settings),
 ) -> IneExtractionResponse:
@@ -93,7 +94,7 @@ async def extract_ine(
         if file.content_type == "application/pdf":
             raw_text = pdf_bytes_to_text(file_bytes, settings.max_pdf_pages)
         else:
-            raw_text = image_bytes_to_text(file_bytes)
+            raw_text = image_bytes_to_text(file_bytes, deep_ocr=deep_ocr)
         return extract_ine_data(raw_text)
     except Exception as exc:
         logger.exception("Error procesando archivo INE")

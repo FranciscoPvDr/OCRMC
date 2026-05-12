@@ -244,6 +244,29 @@
         background: rgba(243, 237, 227, .58);
       }
 
+      .check-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid var(--mc-line);
+        border-radius: 14px;
+        background: rgba(255, 250, 242, .5);
+      }
+
+      .check-row input {
+        width: auto;
+        margin-top: 3px;
+      }
+
+      .check-row label {
+        margin: 0;
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
       button {
         border: 0;
         border-radius: 18px;
@@ -402,6 +425,10 @@
               <label for="apiKey">API key</label>
               <input id="apiKey" name="apiKey" type="password" placeholder="Opcional si la API está protegida" />
             </div>
+            <div class="check-row">
+              <input id="deepOcr" name="deepOcr" type="checkbox" />
+              <label for="deepOcr">Usar OCR profundo si la imagen sale incompleta. Puede tardar más, especialmente con JPEG.</label>
+            </div>
             <button id="button" type="submit">Extraer datos</button>
             <div class="actions">
               <button class="danger-button" id="cancelButton" type="button" disabled>Cancelar</button>
@@ -433,6 +460,7 @@
       const clearButton = document.querySelector('#clearButton');
       const fileInput = document.querySelector('#file');
       const apiKeyInput = document.querySelector('#apiKey');
+      const deepOcrInput = document.querySelector('#deepOcr');
       const result = document.querySelector('#result');
       const resultBadge = document.querySelector('#resultBadge');
       let activeController = null;
@@ -502,7 +530,8 @@
         try {
           const headers = {};
           if (apiKey) headers['x-api-key'] = apiKey;
-          const response = await fetch('/api/ine/extract', { method: 'POST', headers, body, signal: controller.signal });
+          const endpoint = deepOcrInput.checked ? '/api/ine/extract?deep_ocr=true' : '/api/ine/extract';
+          const response = await fetch(endpoint, { method: 'POST', headers, body, signal: controller.signal });
           const contentType = response.headers.get('content-type') || '';
           const data = contentType.includes('application/json') ? await response.json() : { detail: await response.text() };
           if (!response.ok) {

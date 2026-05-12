@@ -18,9 +18,11 @@ VIGENCIA_RE = re.compile(r"VIGENCIA\s*[:\-]?\s*(\d{4}\s*[-/ ]\s*\d{4}|\d{4})")
 INE_KEYWORDS = ["INSTITUTO NACIONAL ELECTORAL", "CREDENCIAL PARA VOTAR", "CLAVE DE ELECTOR", "CURP", "DOMICILIO", "VIGENCIA"]
 
 
-def image_bytes_to_text(file_bytes: bytes) -> str:
+def image_bytes_to_text(file_bytes: bytes, deep_ocr: bool = False) -> str:
     image = Image.open(BytesIO(file_bytes))
-    return pil_image_to_text(image)
+    if deep_ocr:
+        return pil_image_to_text(image)
+    return fast_pil_image_to_text(image)
 
 
 def pdf_bytes_to_text(file_bytes: bytes, max_pages: int) -> str:
@@ -67,6 +69,7 @@ def pil_image_to_text(image: Image.Image) -> str:
 
 def fast_pil_image_to_text(image: Image.Image) -> str:
     image = ImageOps.exif_transpose(image).convert("RGB")
+    image.thumbnail((1800, 1800), Image.Resampling.LANCZOS)
     cv_image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
     gray = resize_for_ocr(gray)
